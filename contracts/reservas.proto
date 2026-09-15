@@ -4,60 +4,78 @@
 
 syntax = "proto3";
 
-package reservas.v1;
-
+package reservas;
 
 service ReservaService {
-    // RPC Unario para consultar tipo de sangre específico y retornar la cantidad disponible respectiva.
-    rpc consultarTipoSangre(tipoSangreRequest) returns (tipoSangreResponse);
+    // Consultar tipo de sangre específico y retornar la cantidad disponible respectiva.
+    rpc ConsultarTipoSangre(ConsultarTipoRequest) returns (ConsultarTipoResponse);
 
     // Listar el stock por tipo de sangre.
-    rpc listarStock (listarStockRequest) returns (listarStockResponse);
+    rpc ListarStock (ListarStockRequest) returns (ListarStockResponse);
 
     // Resevar unidades al solicitarlas
-    rpc reservarUnidades (reservarUnidadesRequest) returns (operacionStockResponse);
+    rpc ReservarUnidades (ReservarUnidadesRequest) returns (ReservarUnidadesResponse);
 
     // Devolver unidades si una solicitud se cancela
-    rpc liberarUnidades (liberarUnidadesRequest) returns (operacionStockResponse);
+    rpc LiberarUnidades (LiberarUnidadesRequest) returns (LiberarUnidadesResponse);
+}
+
+enum TipoSangre {
+    TIPO_SANGRE_DESCONOCIDO = 0;
+    A_POSITIVO = 1;
+    A_NEGATIVO = 2;
+    B_POSITIVO = 3;
+    B_NEGATIVO = 4;
+    AB_POSITIVO = 5;
+    AB_NEGATIVO = 6;
+    O_POSITIVO = 7;
+    O_NEGATIVO = 8;
 }
 
 message StockSangre {
-    string tipo_sangre = 1;
+    TipoSangre tipo_sangre = 1;
     int32 unidades_disponibles = 2;
 }
 
-message tipoSangreRequest {
-    string tipo_sangre = 1; // "B-"
+message ConsultarTipoRequest {
+    TipoSangre tipo_sangre = 1;
 }
 
-message tipoSangreResponse {
-    string tipo_sangre = 1;
-    uint32 unidades_disponibles = 2;
-    bool disponible = 3;
+message ConsultarTipoResponse {
+    TipoSangre tipo_sangre = 1;
+    int32 unidades_disponibles = 2;
 }
 
-message listarStockRequest {
+message ListarStockRequest {
     // Agregar a futuro filtros ?
 }
 
-message listarStockResponse {
-    repeated StockSangre items = 1; // List<Producto>
+message ListarStockResponse {
+    repeated StockSangre items = 1;
 }
 
-message reservarUnidadesRequest {
-    int32 id_solicitud = 1;
-    string tipo_sangre = 2;
-    uint32 cantidad = 3;
+message ReservarUnidadesRequest {
+    string id_solicitud = 1;
+    TipoSangre tipo_sangre = 2;
+    int32 cantidad = 3;
 }
 
-message liberarUnidadesRequest {
-    int32 id_solicitud = 1;
-    string tipo_sangre = 2;
-    uint32 cantidad = 3;
+message ReservarUnidadesResponse{
+    string id_solicitud = 1;
+    TipoSangre tipo_sangre = 2;
+    int32 unidades_reservadas = 3;
+    int32 unidades_restantes = 4;
 }
 
-message operacionStockResponse {
-    bool exitoso = 1;
-    string mensaje = 2; // Mensaje para saber si fue exitoso, en caso contrario tipo de error
-    int32 unidades_restantes = 3;
+message LiberarUnidadesRequest {
+    string id_solicitud = 1;
+    TipoSangre tipo_sangre = 2;
+    int32 cantidad = 3;
+}
+
+message LiberarUnidadesResponse {
+    string id_solicitud = 1;
+    TipoSangre tipo_sangre = 2;
+    int32 unidades_liberadas = 3;
+    int32 unidades_restantes = 4;
 }
