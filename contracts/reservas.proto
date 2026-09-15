@@ -1,0 +1,63 @@
+// ======================================================
+// Sistema de manejo de donaciones de sangre
+// ======================================================
+
+syntax = "proto3";
+
+package reservas.v1;
+
+
+service ReservaService {
+    // RPC Unario para consultar tipo de sangre específico y retornar la cantidad disponible respectiva.
+    rpc consultarTipoSangre(tipoSangreRequest) returns (tipoSangreResponse);
+
+    // Listar el stock por tipo de sangre.
+    rpc listarStock (listarStockRequest) returns (listarStockResponse);
+
+    // Resevar unidades al solicitarlas
+    rpc reservarUnidades (reservarUnidadesRequest) returns (operacionStockResponse);
+
+    // Devolver unidades si una solicitud se cancela
+    rpc liberarUnidades (liberarUnidadesRequest) returns (operacionStockResponse);
+}
+
+message StockSangre {
+    string tipo_sangre = 1;
+    int32 unidades_disponibles = 2;
+}
+
+message tipoSangreRequest {
+    string tipo_sangre = 1; // "B-"
+}
+
+message tipoSangreResponse {
+    string tipo_sangre = 1;
+    uint32 unidades_disponibles = 2;
+    bool disponible = 3;
+}
+
+message listarStockRequest {
+    // Agregar a futuro filtros ?
+}
+
+message listarStockResponse {
+    repeated StockSangre items = 1; // List<Producto>
+}
+
+message reservarUnidadesRequest {
+    int32 id_solicitud = 1;
+    string tipo_sangre = 2;
+    uint32 cantidad = 3;
+}
+
+message liberarUnidadesRequest {
+    int32 id_solicitud = 1;
+    string tipo_sangre = 2;
+    uint32 cantidad = 3;
+}
+
+message operacionStockResponse {
+    bool exitoso = 1;
+    string mensaje = 2; // Mensaje para saber si fue exitoso, en caso contrario tipo de error
+    int32 unidades_restantes = 3;
+}
