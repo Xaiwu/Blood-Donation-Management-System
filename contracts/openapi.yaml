@@ -1,12 +1,363 @@
 openapi: 3.0.3
-info:
-  title:
-  version:
 
+info:
+  title: Sistema de donación de sangre (API EXTERNA)
+  version: 1.0.0
+  description: |
+    API REST Del sistema de solicitudes del banco de sangre
 
 servers:
-  - url:
-    description:
+  - url: http://localhost:8080/v1
+    description: Local host para pruebas
 
+tags:
+  - name: Autenticación
+  - name: Hospitales
+  - name: Solicitudes
+  - name: Operación
+
+#Seguridad JWT
+security:
+  - bearerAuth: []
 
 paths:
+  /auth/token:
+    post:
+      tags: [Autenticación]
+      summary: Obtener un token de acceso
+      description: Intercambia credenciales por un JWT con el rol del usuario.
+      operationId: obtenerToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CredencialesInput' }
+      responses:
+        '200':
+          description: Token emitido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Token' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401':
+          description: Credenciales incorrectas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example: { error: NO_AUTENTICADO, mensaje: Usuario o clave incorrectos }
+
+  /hospitales:
+    get:
+      tags: [Hospitales]
+      summary: Listar hospitales solicitantes
+      operationId: listarHospitales
+      responses:
+        '200':
+          description: Lista de hospitales obtenida correctamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Hospital' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+
+    post:
+      tags: [Hospitales]
+      summary: Registrar un hospital
+      description: Requiere rol de escritura.
+      operationId: crearHospital
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HospitalInput' }
+      responses:
+        '201':
+          description: Hospital registrado correctamente
+          headers:
+            Location:
+              description: URL del hospital creado
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hospital' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /hospitales/{id}:
+    get:
+      tags: [Hospitales]
+      summary: Consultar un hospital específico
+      operationId: obtenerHospital
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Datos del hospital
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hospital' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /solicitudes:
+    get:
+      tags: [Solicitudes]
+      summary: Listar solicitudes registradas
+      description: Obtiene todas las solicitudes
+      operationId: listarSolicitudes
+      responses:
+        '200':
+          description: Lista de solicitudes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Solicitud' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+
+    post:
+      tags: [Solicitudes]
+      summary: Registrar una solicitud de unidades
+      description: |
+        Reserva las unidades de sangre
+      operationId: registrarSolicitud
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SolicitudInput' }
+      responses:
+        '201':
+          description: Solicitud registrada y unidades reservadas
+          headers:
+            Location:
+              description: URL de la solicitud creada
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Solicitud' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '409':
+          description: No hay unidades suficientes del tipo de sangre pedido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example: { error: STOCK_INSUFICIENTE, mensaje: 'Se pidieron 5 unidades de O_NEGATIVO y hay 2 disponibles' }
+        '422':
+          description: El `id_hospital` no corresponde a un hospital registrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example: { error: HOSPITAL_INEXISTENTE, mensaje: No existe el hospital indicado }
+        '503': { $ref: '#/components/responses/ReservasNoDisponible' }
+
+  /solicitudes/{id}:
+    get:
+      tags: [Solicitudes]
+      summary: Consultar una solicitud específica
+      operationId: obtenerSolicitud
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Detalle de la solicitud
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Solicitud' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /solicitudes/{id}/revertir:
+    post:
+      tags: [Solicitudes]
+      summary: Revertir una solicitud de unidades
+      description: |
+        Libera las reservas, si el servidor no responde no se realiza la operacion
+      operationId: revertirSolicitud
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Solicitud revertida correctamente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Solicitud' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: La solicitud ya estaba revertida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example: { error: SOLICITUD_YA_REVERTIDA, mensaje: La solicitud ya fue revertida }
+        '503': { $ref: '#/components/responses/ReservasNoDisponible' }
+
+  /health:
+    get:
+      tags: [Operación]
+      summary: Estado del servicio
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: El servicio está vivo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  estado:   { type: string, example: ok }
+                  servicio: { type: string, example: solicitudes }
+                  cache:    { type: string, example: deshabilitada }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    CredencialesInput:
+      type: object
+      required: [usuario, clave]
+      additionalProperties: false
+      properties:
+        usuario: { type: string }
+        clave:   { type: string, format: password }
+
+    Token:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: { type: string }
+        token_type:   { type: string, example: Bearer }
+        # Número a modificar
+        expires_in:   { type: integer, description: Segundos de validez, example: 3600 }
+
+    Hospital:
+      type: object
+      required: [id, nombre, direccion]
+      properties:
+        id:        { type: string, format: uuid, readOnly: true }
+        nombre:    { type: string }
+        direccion: { type: string }
+
+    HospitalInput:
+      type: object
+      required: [nombre, direccion]
+      additionalProperties: false
+      #Max lenght para hacer más legible
+      properties:
+        nombre:    { type: string, minLength: 1, maxLength: 120 }
+        direccion: { type: string, minLength: 1, maxLength: 200 }
+
+    Solicitud:
+      type: object
+      required: [id_solicitud, id_hospital, tipo_sangre, cantidad, estado]
+      properties:
+        id_solicitud: { type: string, format: uuid, readOnly: true }
+        id_hospital:  { type: string, format: uuid }
+        tipo_sangre:  { $ref: '#/components/schemas/TipoSangre' }
+        cantidad:     { type: integer }
+        estado:       { type: string, enum: [ACTIVA, REVERTIDA] }
+
+    SolicitudInput:
+      type: object
+      required: [id_hospital, tipo_sangre, cantidad]
+      additionalProperties: false
+      properties:
+        id_hospital: { type: string, format: uuid }
+        tipo_sangre: { $ref: '#/components/schemas/TipoSangre' }
+        cantidad:    { type: integer, minimum: 1, maximum: 50 } #Modificar a conveniencia
+
+    TipoSangre:
+      type: string
+      enum:
+        - A_POSITIVO
+        - A_NEGATIVO
+        - B_POSITIVO
+        - B_NEGATIVO
+        - AB_POSITIVO
+        - AB_NEGATIVO
+        - O_POSITIVO
+        - O_NEGATIVO
+
+    ErrorResponse:
+      type: object
+      required: [error, mensaje]
+      properties:
+        error:
+          type: string
+          description: Todos los tipos de errores
+          enum:
+            - VALIDACION
+            - NO_AUTENTICADO
+            - PROHIBIDO
+            - NO_ENCONTRADO
+            - HOSPITAL_INEXISTENTE
+            - STOCK_INSUFICIENTE
+            - SOLICITUD_YA_REVERTIDA
+            - RESERVAS_NO_DISPONIBLE
+            - ERROR_INTERNO
+        mensaje: { type: string }
+
+  responses:
+    # ERROR 400
+    SolicitudInvalida:
+      description: Cuerpo inválido 
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example: { error: VALIDACION, mensaje: "El campo 'cantidad' debe ser un entero entre 1 y 50" }
+    # ERROR 401
+    NoAutenticado:
+      description: Token faltante, inválido o expirado
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, example: Bearer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example: { error: NO_AUTENTICADO, mensaje: Token faltante o inválido }
+    # ERROR 403
+    Prohibido:
+      description: Token válido, pero su rol no permite esta operación
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example: { error: PROHIBIDO, mensaje: "El rol 'lectura' no puede realizar esta operación" }
+    # ERROR 404
+    NoEncontrado:
+      description: El recurso no existe
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example: { error: NO_ENCONTRADO, mensaje: Recurso no encontrado }
+    # ERROR 503
+    ReservasNoDisponible:
+      description: >
+        Reservas no responde, no se hizo ninguna operación
+      headers:
+        Retry-After:
+          description: Segundos sugeridos antes de reintentar
+          schema: { type: integer, example: 5 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example: { error: RESERVAS_NO_DISPONIBLE, mensaje: El servicio de Reservas no respondió a tiempo }
