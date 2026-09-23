@@ -1,6 +1,7 @@
 import hmac
 import logging
 import os
+import secrets
 import time
 
 import jwt
@@ -12,7 +13,8 @@ logger = logging.getLogger("solicitudes.auth")
 JWT_SECRET = os.getenv("JWT_SECRET")
 
 if not JWT_SECRET:
-    raise RuntimeError("JWT_SECRET no está configurado")
+    JWT_SECRET = secrets.token_urlsafe(48)
+    logger.warning("JWT_SECRET no configurado: se generó uno aleatorio para esta ejecución")
 
 JWT_ALGORITMO = "HS256"
 JWT_EXPIRA_SEGUNDOS = int(os.getenv("JWT_EXPIRA_SEGUNDOS", "3600"))
