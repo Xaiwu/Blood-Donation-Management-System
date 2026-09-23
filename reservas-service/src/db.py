@@ -4,8 +4,7 @@ Módulo de persistencia y gestión  para reservas-service.
 import os
 import sqlite3
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "reservas.db")
-
+DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "reservas.db"))
 
 def obtener_conexion() -> sqlite3.Connection:
     """
@@ -31,6 +30,10 @@ def inicializar_bd() -> None:
     Utiliza 'INSERT OR IGNORE' para que el arranque sea completamente idempotente
     ante múltiples ejecuciones o reinicios del contenedor.
     """
+    carpeta = os.path.dirname(DB_PATH)
+    if carpeta:
+        os.makedirs(carpeta, exist_ok=True)
+
     conn = obtener_conexion()
     try:
         conn.execute("PRAGMA journal_mode = WAL;")

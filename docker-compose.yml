@@ -1,0 +1,27 @@
+services:
+  reservas:
+    build:
+      context: .
+      dockerfile: reservas-service/Dockerfile
+    volumes:
+      - reservas-data:/data
+
+  solicitudes:
+    build:
+      context: .
+      dockerfile: solicitudes-service/Dockerfile
+    environment:
+      RESERVAS_TIMEOUT_S: "2.0"
+      RETRY_AFTER_S: "5"
+      JWT_SECRET: "${JWT_SECRET}"
+    volumes:
+      - solicitudes-data:/data
+    ports:
+      - "8080:8080"
+    depends_on:
+      reservas:
+        condition: service_healthy
+
+volumes:
+  reservas-data:
+  solicitudes-data:

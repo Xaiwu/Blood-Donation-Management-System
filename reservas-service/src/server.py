@@ -4,9 +4,10 @@ Módulo del servidor gRPC para reservas-service.
 Implementa la interfaz RPC definida en reservas.proto.
 
 """
-
 import os
+import signal
 import sys
+import threading
 from concurrent import futures
 
 import grpc
@@ -158,14 +159,22 @@ def crear_server():
     servidor.start()
     print("=====================================================")
     print("Servidor gRPC Reservas escuchando en [::]:50051")
-    print("Presiona Ctrl + C para detener el servicio")
     print("=====================================================")
-    try:
-        servidor.wait_for_termination()
-    except KeyboardInterrupt:
-        print("\nDeteniendo servidor gRPC")
-        servidor.stop(grace=2).wait()
-        print("Servidor detenido.")
+
+    evento_apagado = threading.Event()
+
+    def manejar_parada(signum, frame):
+        print(f"\nSeñal {signum} recibida. Deteniendo servidor gRPC...")
+        evento_apagado.set()
+
+    signal.signal(signal.SIGTERM, manejar_parada)
+    signal.signal(signal.SIGINT, manejar_parada)
+
+    while not evento_apagado.wait(timeout=1):
+        pass
+
+    servidor.stop(grace=1).wait()
+    print("Servidor detenido.")
 
 if __name__ == "__main__":
     crear_server()
