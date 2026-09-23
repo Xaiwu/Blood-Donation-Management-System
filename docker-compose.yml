@@ -14,6 +14,10 @@ services:
       RESERVAS_TIMEOUT_S: "2.0"
       RETRY_AFTER_S: "5"
       JWT_SECRET: "${JWT_SECRET}"
+      USUARIO_LECTURA: "${USUARIO_LECTURA}"
+      CLAVE_LECTURA: "${CLAVE_LECTURA}"
+      USUARIO_ESCRITURA: "${USUARIO_ESCRITURA}"
+      CLAVE_ESCRITURA: "${CLAVE_ESCRITURA}"
     volumes:
       - solicitudes-data:/data
     ports:

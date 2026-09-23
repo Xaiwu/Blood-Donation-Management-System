@@ -9,18 +9,30 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 logger = logging.getLogger("solicitudes.auth")
 
-_SECRETO_DEV = "TOPSICRET"
-JWT_SECRET = os.getenv("JWT_SECRET", _SECRETO_DEV)
+JWT_SECRET = os.getenv("JWT_SECRET")
+
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET no está configurado")
+
 JWT_ALGORITMO = "HS256"
 JWT_EXPIRA_SEGUNDOS = int(os.getenv("JWT_EXPIRA_SEGUNDOS", "3600"))
-# Roles básicos para el eventual portal web
+
 ROL_LECTURA = "lectura"
 ROL_ESCRITURA = "escritura"
 ROLES_VALIDOS = (ROL_LECTURA, ROL_ESCRITURA)
 
+USUARIO_LECTURA = os.getenv("USUARIO_LECTURA")
+CLAVE_LECTURA = os.getenv("CLAVE_LECTURA")
+
+USUARIO_ESCRITURA = os.getenv("USUARIO_ESCRITURA")
+CLAVE_ESCRITURA = os.getenv("CLAVE_ESCRITURA")
+
+if not all([USUARIO_LECTURA, CLAVE_LECTURA, USUARIO_ESCRITURA, CLAVE_ESCRITURA]):
+    raise RuntimeError("Las credenciales de usuario no están configuradas")
+
 USUARIOS = {
-    os.getenv("USUARIO_LECTURA", "lector"): (os.getenv("CLAVE_LECTURA", "lector123"), ROL_LECTURA),
-    os.getenv("USUARIO_ESCRITURA", "operador"): (os.getenv("CLAVE_ESCRITURA", "operador123"), ROL_ESCRITURA),
+    USUARIO_LECTURA: (CLAVE_LECTURA, ROL_LECTURA),
+    USUARIO_ESCRITURA: (CLAVE_ESCRITURA, ROL_ESCRITURA),
 }
 
 _esquema_bearer = HTTPBearer(auto_error=False)
