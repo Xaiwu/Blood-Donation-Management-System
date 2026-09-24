@@ -1,0 +1,6 @@
+# Override para correr el experimento 1 como un proyecto aislado
+# Publica solicitudes en 18080 para no chocar con el stack normal en 8080.
+services:
+  solicitudes:
+    ports: !override
+      - "18080:8080"

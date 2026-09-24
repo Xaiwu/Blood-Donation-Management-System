@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: reservas-service/Dockerfile
+    environment:
+      RESERVAS_DELAY_MS: "${RESERVAS_DELAY_MS:-0}"
     volumes:
       - reservas-data:/data
 
@@ -11,7 +13,7 @@ services:
       context: .
       dockerfile: solicitudes-service/Dockerfile
     environment:
-      RESERVAS_TIMEOUT_S: "2.0"
+      RESERVAS_TIMEOUT_S: "${RESERVAS_TIMEOUT_S:-2.0}"
       RETRY_AFTER_S: "5"
       JWT_SECRET: "${JWT_SECRET}"
       USUARIO_LECTURA: "${USUARIO_LECTURA}"

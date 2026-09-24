@@ -1,0 +1,7 @@
+mensaje,bytes_protobuf,bytes_json,ratio_json_sobre_pb,bytes_protobuf_gzip,bytes_json_gzip,us_serializar_pb,us_serializar_json,us_deserializar_pb,us_deserializar_json
+ReservarUnidadesRequest,42,95,2.26,62,112,0.16,2.86,0.39,2.4
+ReservarUnidadesResponse,44,130,2.95,64,131,0.19,3.25,0.37,2.3
+ListarStockResponse (N=8),50,456,9.12,58,136,0.3,7.6,0.69,4.73
+ListarStockResponse (N=100),674,5621,8.34,364,473,2.19,64.03,3.09,35.41
+ListarStockResponse (N=1000),6757,56067,8.3,2787,3156,19.22,649.52,26.61,322.96
+ListarStockResponse (N=10000),67440,560202,8.31,25014,28990,301.66,8330.07,364.12,3875.27

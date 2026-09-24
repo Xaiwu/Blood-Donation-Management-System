@@ -8,6 +8,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from concurrent import futures
 
 import grpc
@@ -17,6 +18,15 @@ sys.path.append(os.path.dirname(__file__))
 import db
 import reservas_pb2 as pb
 import reservas_pb2_grpc as pbg
+
+# Retardo artificial (ms) para experimentar con una dependencia lenta. 0 = desactivado.
+RETARDO_MS = int(os.getenv("RESERVAS_DELAY_MS", "0"))
+
+
+def _simular_latencia():
+    """Duerme RETARDO_MS milisegundos si el retardo experimental está activo."""
+    if RETARDO_MS > 0:
+        time.sleep(RETARDO_MS / 1000)
 
 
 class ReservaService(pbg.ReservaServiceServicer):
@@ -82,6 +92,7 @@ class ReservaService(pbg.ReservaServiceServicer):
             grpc.StatusCode.INVALID_ARGUMENT: Si el id_solicitud, cantidad o tipo de sangre no son válidos.
             grpc.StatusCode.FAILED_PRECONDITION: Si la cantidad a reservar es superior a las unidades disponibles.
         """
+        _simular_latencia()
 
         if not request.id_solicitud.strip():
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "El id_solicitud es obligatorio")
@@ -159,6 +170,8 @@ def crear_server():
     servidor.start()
     print("=====================================================")
     print("Servidor gRPC Reservas escuchando en [::]:50051")
+    if RETARDO_MS > 0:
+        print(f"AVISO: retardo experimental activo de {RETARDO_MS} ms en ReservarUnidades")
     print("=====================================================")
 
     evento_apagado = threading.Event()
