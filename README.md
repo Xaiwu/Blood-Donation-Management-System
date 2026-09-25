@@ -14,8 +14,8 @@ El sistema está compuesto por múltiples servicios contenedorizados, diseñados
 
 | Microservicio | Protocolo / Interfaz | URL Local | Descripción |
 | :--- | :--- | :--- | :--- |
-| **Solicitudes Service** | HTTP / REST | `http://localhost:8000` | Gestión y registro de solicitudes de donación. |
-| **Documentación API** | Swagger UI | `http://localhost:8000/docs` | Interfaz interactiva de los endpoints REST (OpenAPI). |
+| **Solicitudes Service** | HTTP / REST | `http://localhost:8080` | Gestión y registro de solicitudes de donación. |
+| **Documentación API** | Swagger UI | `http://localhost:8080/docs` | Interfaz interactiva de los endpoints REST (OpenAPI). |
 | **Reservas Service** | gRPC | `localhost:50051` | Gestión de reservas, horarios y disponibilidad. |
 
 ---
@@ -81,7 +81,7 @@ Los resultados de estas pruebas se almacenan en formato CSV y gráficos PNG dent
 
 ## Para probar los endpoints
 
-La forma más fácil es usar la interfaz web presente en http://localhost:8000/v1/docs
+La forma más fácil es usar la interfaz web presente en http://localhost:8080/v1/docs
 
 ## Estructura del Proyecto
 
