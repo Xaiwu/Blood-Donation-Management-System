@@ -7,7 +7,7 @@ from functools import lru_cache
 from uuid import UUID
 
 import grpc
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response, status, Header
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -191,7 +191,15 @@ def listar_solicitudes():
 
 @router.post("/solicitudes", status_code=status.HTTP_201_CREATED, response_model=SolicitudOut,
              tags=["Solicitudes"], dependencies=[Depends(requiere_escritura)])
-def registrar_solicitud(solicitud: SolicitudInput, response: Response):
+def registrar_solicitud(solicitud: SolicitudInput, response: Response, idempotency_key: str = Header(alias="Idempotency-Key")):
+    
+    registro_previo = database.obtener_idempotencia(idempotency_key)
+    if registro_previo:
+        # Si encuentra la llave de idempotencia, retorna la misma respuesta original
+        return JSONResponse(
+            content=registro_previo["respuesta"], 
+            status_code=registro_previo["status_code"]
+        )
     id_hospital = str(solicitud.id_hospital)
     #Busca si el hospital está en la base de datos
     if not database.obtener_hospital(id_hospital):
@@ -250,7 +258,7 @@ def registrar_solicitud(solicitud: SolicitudInput, response: Response):
             status_code=500,
             detail={"error": "ERROR_INTERNO", "mensaje": "No se pudo registrar la solicitud"}
         )
-
+    database.guardar_idempotencia(idempotency_key, nueva_solicitud, status.HTTP_201_CREATED)
     response.headers["Location"] = f"/v1/solicitudes/{id_nueva_solicitud}"
     return nueva_solicitud
 

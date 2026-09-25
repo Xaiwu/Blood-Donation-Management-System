@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import uuid
-
+import json
 
 DB_PATH = os.getenv("DB_PATH",os.path.join(os.path.dirname(os.path.abspath(__file__)), "solicitudes.db"),)
 
@@ -49,6 +49,16 @@ def inicializar_bd() -> None:
                 FOREIGN KEY(id_hospital) REFERENCES hospitales(id)
             );
         """)
+        # Tabla de idempotencia
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS idempotencia_log (
+                clave TEXT PRIMARY KEY,
+                respuesta_json TEXT NOT NULL,
+                status_code INTEGER NOT NULL,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
         conn.commit()
     finally:
         conn.close()
@@ -155,5 +165,35 @@ def restaurar_estado_activa(id_solicitud: str) -> bool:
         )
         conn.commit()
         return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+def obtener_idempotencia(clave: str) -> dict | None:
+    #Busca si ya pasó una llave de idempotencia
+    conn = obtener_conexion()
+    try:
+        cursor = conn.execute(
+            "SELECT respuesta_json, status_code FROM idempotencia_log WHERE clave = ?", 
+            (clave,)
+        )
+        fila = cursor.fetchone()
+        if fila:
+            return {
+                "respuesta": json.loads(fila["respuesta_json"]),
+                "status_code": fila["status_code"]
+            }
+        return None
+    finally:
+        conn.close()
+
+def guardar_idempotencia(clave: str, respuesta: dict, status_code: int) -> None:
+    #Cuando hay una operación de solicitud exitosa guarda la llave para revisarla 
+    conn = obtener_conexion()
+    try:
+        conn.execute(
+            "INSERT INTO idempotencia_log (clave, respuesta_json, status_code) VALUES (?, ?, ?)",
+            (clave, json.dumps(respuesta), status_code)
+        )
+        conn.commit()
     finally:
         conn.close()

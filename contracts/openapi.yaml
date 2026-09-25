@@ -124,6 +124,14 @@ paths:
       description: |
         Reserva las unidades de sangre
       operationId: registrarSolicitud
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Clave única para garantizar la idempotencia de la petición.
       requestBody:
         required: true
         content:
