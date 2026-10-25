@@ -24,7 +24,7 @@ import main
 
 
 class ErrorRpc(grpc.RpcError):
-    """RpcError controlable para simular las respuestas de Reservas."""
+    #RpcError controlable para simular las respuestas de Reservas
 
     def __init__(self, codigo, detalle=""):
         super().__init__()
@@ -38,7 +38,7 @@ class ErrorRpc(grpc.RpcError):
 
 
 class StubFalso:
-    """Registra las llamadas y permite programar una excepción por método."""
+    #Registra las llamadas y permite programar una excepción por método
 
     def __init__(self):
         self.llamadas = []
