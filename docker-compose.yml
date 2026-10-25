@@ -7,6 +7,8 @@ services:
       RESERVAS_DELAY_MS: "${RESERVAS_DELAY_MS:-0}"
     volumes:
       - reservas-data:/data
+    ports:
+      - "127.0.0.1:50051:50051"
 
   solicitudes:
     build:

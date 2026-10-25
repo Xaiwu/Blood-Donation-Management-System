@@ -131,6 +131,16 @@ El contrato y las operaciones disponibles se encuentran definidos en:
 contracts/reservas.proto
 ```
 
+## Segundo cliente gRPC en .NET
+
+Con los servicios iniciados mediante `docker compose up --build` y el SDK de .NET 8 instalado, ejecute desde la raíz:
+
+```bash
+dotnet run --project cliente-dotnet
+```
+
+El cliente consulta `ListarStock` del servicio Python y muestra cada tipo de sangre con sus unidades disponibles. El proyecto .NET genera el cliente gRPC a partir del mismo archivo `contracts/reservas.proto`; no modifica el stock. Se eligió .NET para demostrar que un cliente en otro lenguaje puede consumir el servicio Python usando solo el contrato compartido.
+
 ## Probar los endpoints
 
 La forma más sencilla de probar la API REST es utilizar la interfaz Swagger disponible en:

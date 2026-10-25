@@ -3,3 +3,5 @@ venv
 .env
 experimentos/_gen/
 __pycache__/
+cliente-dotnet/bin/
+cliente-dotnet/obj/
