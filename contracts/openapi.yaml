@@ -215,6 +215,39 @@ paths:
                   estado:   { type: string, example: ok }
                   servicio: { type: string, example: solicitudes }
                   cache:    { type: string, example: deshabilitada }
+  /health/ready:
+    get:
+      tags: [Operación]
+      summary: Disponibilidad del servicio y de su dependencia (Reservas)
+      description: |
+        Verifica que Reservas responda dentro del timeout. 
+        Informa también cuántas liberaciones quedan pendientes de reconciliar.
+      operationId: healthReady
+      security: []
+      responses:
+        '200':
+          description: Solicitudes y Reservas responden
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  estado:                    { type: string, example: ok }
+                  servicio:                  { type: string, example: solicitudes }
+                  reservas:                  { type: string, example: disponible }
+                  compensaciones_pendientes: { type: integer, example: 0 }
+        '503':
+          description: Reservas no respondió a tiempo
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:   { type: string, example: RESERVAS_NO_DISPONIBLE }
+                  mensaje: { type: string }
 
 components:
   securitySchemes:
