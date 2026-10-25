@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -27,11 +28,20 @@ RESERVAS_ADDR = os.getenv("RESERVAS_ADDR", "localhost:50051")
 # Mecanismo de resiliencia
 RESERVAS_TIMEOUT_S = float(os.getenv("RESERVAS_TIMEOUT_S", "2.0"))
 RETRY_AFTER_S = int(os.getenv("RETRY_AFTER_S", "5"))
+# Mecanismo de reconciliación para reservas huerfanas
+RECONCILIACION_INTERVALO_S = float(os.getenv("RECONCILIACION_INTERVALO_S", "10"))
+RECONCILIACION_GRACIA_S = int(os.getenv("RECONCILIACION_GRACIA_S", "15"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.inicializar_bd()
-    yield
+    # Completa las reversiones si la comunicación se cae
+    await asyncio.to_thread(reconciliar_revertidas)
+    tarea = asyncio.create_task(_ciclo_reconciliacion())
+    try:
+        yield
+    finally:
+        database.cerrar_bd()
 
 app = FastAPI(
     title="Sistema de donación de sangre (API EXTERNA)",
@@ -183,6 +193,65 @@ def _error_desde_rpc(e: grpc.RpcError, operacion: str) -> HTTPException:
         detail={"error": "ERROR_INTERNO", "mensaje": f"Error inesperado al comunicarse con Reservas ({operacion})"},
     )
 
+# Intenta liberar una unidad en reserva con un timeout
+def _liberar_en_reservas(id_solicitud: str, tipo_sangre: str, cantidad: int) -> None:
+    get_grpc_stub().LiberarUnidades(
+        pb.LiberarUnidadesRequest(
+            id_solicitud=id_solicitud,
+            tipo_sangre=pb.TipoSangre.Value(tipo_sangre),
+            cantidad=cantidad
+        ),
+        timeout=RESERVAS_TIMEOUT_S
+    )
+
+def reconciliar_compensaciones() -> int:
+    #Libera en reservas, reservas que quedaron sin solicitud, es decir que quedaron huerfanas
+    resueltas = 0
+    # Intenta revertir todas las compensaciones que no se hayan procesado en el timeout
+    for comp in database.listar_compensaciones_vencidas(RECONCILIACION_GRACIA_S):
+        id_solicitud = comp["id_solicitud"]
+        # Si la solicitud existe localmente, no es huerfana
+        if database.obtener_solicitud(id_solicitud):
+            database.eliminar_compensacion(id_solicitud)
+            continue
+        try:
+            _liberar_en_reservas(id_solicitud, comp["tipo_sangre"], comp["cantidad"])
+        except grpc.RpcError as e:
+            if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
+                # No hay nada que liberar
+                database.eliminar_compensacion(id_solicitud)
+                resueltas += 1
+            else:
+                # si falla documenta cuantas veces ha fallado y que todavia esta pendiente
+                database.incrementar_intentos_compensacion(id_solicitud)
+                logger.warning("Compensación %s pendiente (intento %s): %s",
+                               id_solicitud, comp["intentos"] + 1, e.code().name)
+            continue
+        database.eliminar_compensacion(id_solicitud)
+        resueltas += 1
+        logger.info("Reserva huérfana %s liberada por reconciliación", id_solicitud)
+    return resueltas
+
+def reconciliar_revertidas() -> None:
+    # Intenta liberar las unidades revertidas
+    for sol in database.listar_solicitudes_revertidas():
+        try:
+            _liberar_en_reservas(sol["id_solicitud"], sol["tipo_sangre"], sol["cantidad"])
+        except grpc.RpcError as e:
+            logger.warning("Reconciliación de revertidas detenida: %s", e.code().name)
+            return
+
+#Ciclo asincrónico para liberar unidades periodicamente
+async def _ciclo_reconciliacion():
+    while True:
+        # Intervalo arbitrario
+        await asyncio.sleep(RECONCILIACION_INTERVALO_S)
+        try:
+            await asyncio.to_thread(reconciliar_compensaciones)
+        except Exception:
+            logger.exception("Falló el ciclo de reconciliación")
+
+
 #Endpoints de solicitudes
 @router.get("/solicitudes", response_model=list[SolicitudOut], tags=["Solicitudes"],
             dependencies=[Depends(verificar_token)])
@@ -221,6 +290,9 @@ def registrar_solicitud(solicitud: SolicitudInput, response: Response):
                 detail={"error": "STOCK_INSUFICIENTE",
                         "mensaje": e.details() or "No hay unidades suficientes del tipo de sangre pedido"}
             )
+        # Se deja una compensación para liberarla si quedo huerfana
+        if e.code() in (grpc.StatusCode.DEADLINE_EXCEEDED, grpc.StatusCode.UNAVAILABLE):
+            database.registrar_compensacion(id_nueva_solicitud, solicitud.tipo_sangre.value, solicitud.cantidad)
         raise _error_desde_rpc(e, "reservar")
 
     # Si grpc funciona se guarda en la base de datos del sistema de solicitudes
@@ -243,9 +315,10 @@ def registrar_solicitud(solicitud: SolicitudInput, response: Response):
                 ),
                 timeout=RESERVAS_TIMEOUT_S
             )
-        # Peor caso se debe resolver manualmente
+        # Si no se libera, se lo deja al ciclo asincronico de conciliación
         except grpc.RpcError:
-            logger.error("No se pudo compensar la reserva %s: requiere reconciliación manual", id_nueva_solicitud)
+            logger.error("No se pudo compensar la reserva %s: queda pendiente de reconciliación", id_nueva_solicitud)
+            database.registrar_compensacion(id_nueva_solicitud, solicitud.tipo_sangre.value, solicitud.cantidad)
         raise HTTPException(
             status_code=500,
             detail={"error": "ERROR_INTERNO", "mensaje": "No se pudo registrar la solicitud"}
@@ -298,9 +371,22 @@ def revertir_solicitud(id: str):
 
     return database.obtener_solicitud(id)
 
-
 @router.get("/health", tags=["Operación"])
 def health():
     return {"estado": "ok", "servicio": "solicitudes", "cache": "deshabilitada"}
+
+@router.get("/health/ready", tags=["Operación"])
+def health_ready():
+    #  Verifica que Reservas responda dentro del timeout
+    try:
+        get_grpc_stub().ListarStock(pb.ListarStockRequest(), timeout=RESERVAS_TIMEOUT_S)
+    except grpc.RpcError as e:
+        raise _error_desde_rpc(e, "verificar disponibilidad")
+    return {
+        "estado": "ok",
+        "servicio": "solicitudes",
+        "reservas": "disponible",
+        "compensaciones_pendientes": database.contar_compensaciones_pendientes(),
+    }
 
 app.include_router(router)

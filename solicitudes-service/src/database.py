@@ -49,6 +49,16 @@ def inicializar_bd() -> None:
                 FOREIGN KEY(id_hospital) REFERENCES hospitales(id)
             );
         """)
+        # Liberaciones pendientes en Reservas (reservas huérfanas por resultado ambiguo)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS compensaciones_pendientes (
+                id_solicitud TEXT PRIMARY KEY,
+                tipo_sangre TEXT NOT NULL,
+                cantidad INTEGER NOT NULL,
+                intentos INTEGER NOT NULL DEFAULT 0,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
         conn.commit()
     finally:
         conn.close()
@@ -155,5 +165,68 @@ def restaurar_estado_activa(id_solicitud: str) -> bool:
         )
         conn.commit()
         return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+# Lógica de compensación, para evitar reservas huerfanas y existan problemas de conectividad
+
+# Registra una compensación pendiente para una solicitud revertida
+def registrar_compensacion(id_solicitud: str, tipo_sangre: str, cantidad: int) -> None:
+    conn = obtener_conexion()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO compensaciones_pendientes (id_solicitud, tipo_sangre, cantidad) VALUES (?, ?, ?)",
+            (id_solicitud, tipo_sangre, cantidad)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def listar_compensaciones_vencidas(gracia_s: int) -> list[dict]:
+    # Solo las que superaron el timeout 
+    conn = obtener_conexion()
+    try:
+        cursor = conn.execute(
+            """SELECT id_solicitud, tipo_sangre, cantidad, intentos FROM compensaciones_pendientes
+               WHERE fecha_creacion <= datetime('now', ?) ORDER BY fecha_creacion, rowid""",
+            (f"-{int(gracia_s)} seconds",)
+        )
+        return [dict(fila) for fila in cursor.fetchall()]
+    finally:
+        conn.close()
+# Elimina si se pudo compensar la reserva o pasó el timeout y no se pudo compensar
+def eliminar_compensacion(id_solicitud: str) -> None:
+    conn = obtener_conexion()
+    try:
+        conn.execute("DELETE FROM compensaciones_pendientes WHERE id_solicitud = ?", (id_solicitud,))
+        conn.commit()
+    finally:
+        conn.close()
+# Incrementa el contador de intentos de compensación para una solicitud revertida
+def incrementar_intentos_compensacion(id_solicitud: str) -> None:
+    conn = obtener_conexion()
+    try:
+        conn.execute(
+            "UPDATE compensaciones_pendientes SET intentos = intentos + 1 WHERE id_solicitud = ?",
+            (id_solicitud,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+# Devuelve la cantidad de compensaciones pendientes
+def contar_compensaciones_pendientes() -> int:
+    conn = obtener_conexion()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM compensaciones_pendientes").fetchone()[0]
+    finally:
+        conn.close()
+# Lista las solicitudes revertidas
+def listar_solicitudes_revertidas() -> list[dict]:
+    conn = obtener_conexion()
+    try:
+        cursor = conn.execute(
+            f"SELECT {_COLUMNAS_SOLICITUD} FROM solicitudes WHERE estado = 'REVERTIDA' ORDER BY fecha_creacion, rowid"
+        )
+        return [dict(fila) for fila in cursor.fetchall()]
     finally:
         conn.close()
