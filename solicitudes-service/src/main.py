@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        database.cerrar_bd()
+        tarea.cancel()
 
 app = FastAPI(
     title="Sistema de donación de sangre (API EXTERNA)",
