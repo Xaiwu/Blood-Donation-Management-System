@@ -205,25 +205,38 @@ def liberar_stock(
 ) -> tuple[bool, int | str]:
     """
     Libera unidades previamente reservadas retornándolas al inventario disponible.
-
-    Garantiza consistencia mediante BEGIN IMMEDIATE, verificando que la cantidad
-    a reintegrar no exceda las unidades registradas como reservadas.
-
-    Args:
-        id_solicitud: Identificador de la solicitud cancelada o expirada.
-        tipo_nombre: Nombre del tipo de sangre.
-        cantidad: Cantidad de unidades a liberar.
-
-    Returns:
-        Tuple[bool, int | str]:
-            - (True, int): Éxito; retorna el total de unidades disponibles actualizadas.
-            - (False, str): Falla por inconsistencia en reservas o error de motor.
+    Implementa Idempotent Receiver verificando log_reservas antes de descontar de reservadas.
     """
     conn = obtener_conexion()
     cursor = conn.cursor()
     try:
         cursor.execute("BEGIN IMMEDIATE")
+        # Comprobación de Idempotencia Si ya se libero antes o no.
+        cursor.execute(
+            "SELECT id FROM log_reservas WHERE id_solicitud = ? AND accion = 'LIBERACION'",
+            (id_solicitud,)
+        )
+        if cursor.fetchone():
+            # Si ya fue liberada antes, devolver el stock disponible actual sin liberar dos veces
+            cursor.execute(
+                "SELECT unidades_disponibles FROM inventario WHERE tipo_sangre = ?",
+                (tipo_nombre,)
+            )
+            fila = cursor.fetchone()
+            conn.commit()
+            return True, fila["unidades_disponibles"] if fila else 0
 
+        # Verificar que exista la reserva original para ese id_solicitud
+        cursor.execute(
+            "SELECT cantidad FROM log_reservas WHERE id_solicitud = ? AND accion = 'RESERVA'",
+            (id_solicitud,)
+        )
+        reserva_previa = cursor.fetchone()
+        if not reserva_previa:
+            conn.rollback()
+            return False, f"No existe una reserva previa asociada a la solicitud {id_solicitud}"
+
+        # Comprobar existencia y stock en reserva
         cursor.execute(
             "SELECT unidades_disponibles, unidades_reservadas FROM inventario WHERE tipo_sangre = ?",
             (tipo_nombre,)
@@ -240,6 +253,7 @@ def liberar_stock(
             conn.rollback()
             return False, f"No se pueden liberar {cantidad} unidades; solo hay {reservadas} en reserva"
 
+        # Actualizar inventario y registrar liberación
         cursor.execute("""
             UPDATE inventario
             SET unidades_disponibles = unidades_disponibles + ?,
