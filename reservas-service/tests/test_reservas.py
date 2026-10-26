@@ -58,7 +58,9 @@ def test_listar_stock_completo(stub):
 def test_reservar_unidades_exito(stub):
     """Valida camino exitoso de una reserva con descuento de stock usando ID único."""
     id_solicitud = f"TEST-REQ-{uuid.uuid4().hex[:8]}"
-    inicial = stub.ConsultarTipoSangre(pb.ConsultarTipoRequest(tipo_sangre=pb.TipoSangre.B_POSITIVO)).unidades_disponibles
+    inicial = stub.ConsultarTipoSangre(
+        pb.ConsultarTipoRequest(tipo_sangre=pb.TipoSangre.B_POSITIVO)
+    ).unidades_disponibles
 
     req = pb.ReservarUnidadesRequest(
         id_solicitud=id_solicitud,
@@ -66,9 +68,18 @@ def test_reservar_unidades_exito(stub):
         cantidad=1
     )
     resp = stub.ReservarUnidades(req)
-    assert resp.id_solicitud == id_solicitud
-    assert resp.unidades_reservadas == 1
-    assert resp.unidades_restantes == inicial - 1
+    try:
+        assert resp.id_solicitud == id_solicitud
+        assert resp.unidades_reservadas == 1
+        assert resp.unidades_restantes == inicial - 1
+    finally:
+        # Limpieza para no agotar el stock en corridas sucesivas
+        stub.LiberarUnidades(pb.LiberarUnidadesRequest(
+            id_solicitud=id_solicitud,
+            tipo_sangre=pb.TipoSangre.B_POSITIVO,
+            cantidad=1
+        ))
+
 
 def test_reserva_idempotente_no_duplica_descuento(stub):
     """Verifica el patron Idempotent Receiver: reenviar el mismo id_solicitud no descuenta dos veces."""
@@ -80,10 +91,18 @@ def test_reserva_idempotente_no_duplica_descuento(stub):
     )
     # Primera llamada: descuenta 2 unidades
     resp1 = stub.ReservarUnidades(req)
+    try:
+        # Segunda llamada reintento con mismo id_solicitud: devuelve el mismo remanente sin descontar otra vez
+        resp2 = stub.ReservarUnidades(req)
+        assert resp2.unidades_restantes == resp1.unidades_restantes
+    finally:
+        # Limpieza: devolvemos las 2 unidades reservadas al inventario
+        stub.LiberarUnidades(pb.LiberarUnidadesRequest(
+            id_solicitud=id_solicitud,
+            tipo_sangre=pb.TipoSangre.O_POSITIVO,
+            cantidad=2
+        ))
 
-    # Segunda llamada reitento con mismo id_solicitud: debe devolver el mismo remanente sin descontar otra vez
-    resp2 = stub.ReservarUnidades(req)
-    assert resp2.unidades_restantes == resp1.unidades_restantes
 
 def test_reservar_cantidad_invalida(stub):
     """Valida rechazo con INVALID_ARGUMENT ante cantidad menor o igual a cero."""
@@ -96,6 +115,7 @@ def test_reservar_cantidad_invalida(stub):
         stub.ReservarUnidades(req)
     assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
 
+
 def test_reservar_sin_id_solicitud(stub):
     """Valida rechazo cuando id_solicitud viaja en blanco."""
     req = pb.ReservarUnidadesRequest(
@@ -106,6 +126,7 @@ def test_reservar_sin_id_solicitud(stub):
     with pytest.raises(grpc.RpcError) as exc_info:
         stub.ReservarUnidades(req)
     assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+
 
 def test_reservar_stock_insuficiente(stub):
     """Valida rechazo con FAILED_PRECONDITION si no hay stock suficiente."""
@@ -145,6 +166,27 @@ def test_liberar_unidades_exito(stub):
     )
     resp = stub.LiberarUnidades(req_liberar)
     assert resp.unidades_liberadas == 1
+
+
+def test_liberar_idempotente_no_duplica_reintegro(stub):
+    """Verifica que reenviar LiberarUnidades con el mismo id_solicitud no sume stock dos veces."""
+    id_solicitud = f"TEST-LIB-IDEM-{uuid.uuid4().hex[:8]}"
+    req_res = pb.ReservarUnidadesRequest(
+        id_solicitud=id_solicitud,
+        tipo_sangre=pb.TipoSangre.A_POSITIVO,
+        cantidad=1
+    )
+    stub.ReservarUnidades(req_res)
+
+    req_lib = pb.LiberarUnidadesRequest(
+        id_solicitud=id_solicitud,
+        tipo_sangre=pb.TipoSangre.A_POSITIVO,
+        cantidad=1
+    )
+    resp1 = stub.LiberarUnidades(req_lib)
+    resp2 = stub.LiberarUnidades(req_lib)
+    assert resp2.unidades_restantes == resp1.unidades_restantes
+
 
 def test_liberar_mas_de_lo_reservado_falla(stub):
     """Valida que no se pueda liberar stock que no estaba reservado."""
