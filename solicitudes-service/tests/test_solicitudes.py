@@ -193,10 +193,26 @@ def test_arranque_completa_reversiones_a_medias(cliente, escritor, hospital, stu
 
 # Tests de health
 
-def test_health(cliente, stub):
-    #Endpoint principal 
+def test_health_ok(cliente, stub):
+    r = cliente.get("/v1/health")
+    assert r.status_code == 200
+    assert r.json()["estado"] == "ok" and r.json()["reservas"] == "disponible"
+
+
+def test_health_degradado_si_reservas_cae(cliente, stub):
+    #Con Reservas caído ya no se declara "ok"
     stub.errores["ListarStock"] = ErrorRpc(grpc.StatusCode.UNAVAILABLE)
-    assert cliente.get("/v1/health").status_code == 200
+    r = cliente.get("/v1/health")
+    assert r.status_code == 200
+    assert r.json()["estado"] == "degradado" and r.json()["reservas"] == "no_disponible"
+
+
+def test_health_live_no_consulta_reservas(cliente, stub):
+    #Liveness: responde aunque Reservas esté caído y sin llamarlo
+    stub.errores["ListarStock"] = ErrorRpc(grpc.StatusCode.UNAVAILABLE)
+    r = cliente.get("/v1/health/live")
+    assert r.status_code == 200 and r.json()["estado"] == "vivo"
+    assert stub.veces("ListarStock") == 0
 
 
 # Revisa si el servicio de reservas esta disponible
@@ -211,3 +227,10 @@ def test_health_si_reservas_cae(cliente, stub):
     r = cliente.get("/v1/health/ready")
     assert r.status_code == 503 and r.json()["error"] == "RESERVAS_NO_DISPONIBLE"
     assert "Retry-After" in r.headers
+
+
+def test_health_ready_error_inesperado_es_503(cliente, stub):
+    #Un error distinto de timeout/caída también deja al servicio no disponible
+    stub.errores["ListarStock"] = ErrorRpc(grpc.StatusCode.INTERNAL)
+    r = cliente.get("/v1/health/ready")
+    assert r.status_code == 503 and r.json()["error"] == "RESERVAS_NO_DISPONIBLE"
