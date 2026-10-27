@@ -371,17 +371,44 @@ def revertir_solicitud(id: str):
 
     return database.obtener_solicitud(id)
 
-@router.get("/health", tags=["Operación"])
-def health():
-    return {"estado": "ok", "servicio": "solicitudes", "cache": "deshabilitada"}
-
-@router.get("/health/ready", tags=["Operación"])
-def health_ready():
-    #  Verifica que Reservas responda dentro del timeout
+# Consulta a Reservas dentro del timeout; retorna None si responde o el código de la falla
+def _falla_reservas() -> str | None:
     try:
         get_grpc_stub().ListarStock(pb.ListarStockRequest(), timeout=RESERVAS_TIMEOUT_S)
     except grpc.RpcError as e:
-        raise _error_desde_rpc(e, "verificar disponibilidad")
+        logger.warning("Health: Reservas no disponible (%s)", e.code().name)
+        return e.code().name
+    return None
+
+# Estado del sistema: siempre 200, pero informa "degradado" si Reservas no responde
+@router.get("/health", tags=["Operación"])
+def health():
+    falla = _falla_reservas()
+    return {
+        "estado": "degradado" if falla else "ok",
+        "servicio": "solicitudes",
+        "reservas": "no_disponible" if falla else "disponible",
+        "compensaciones_pendientes": database.contar_compensaciones_pendientes(),
+        "cache": "deshabilitada",
+    }
+
+# Liveness: solo indica que el proceso responde, no consulta a Reservas.
+# Lo usan el HEALTHCHECK de Docker y la sonda del Experimento 1
+@router.get("/health/live", tags=["Operación"])
+def health_live():
+    return {"estado": "vivo", "servicio": "solicitudes"}
+
+# Readiness: 503 si Reservas no responde, para quien necesite decidir por código HTTP
+@router.get("/health/ready", tags=["Operación"])
+def health_ready():
+    falla = _falla_reservas()
+    if falla:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": "RESERVAS_NO_DISPONIBLE",
+                    "mensaje": f"El servicio de Reservas no está disponible ({falla})"},
+            headers={"Retry-After": str(RETRY_AFTER_S)},
+        )
     return {
         "estado": "ok",
         "servicio": "solicitudes",

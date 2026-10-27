@@ -201,26 +201,52 @@ paths:
   /health:
     get:
       tags: [Operación]
-      summary: Estado del servicio
+      summary: Estado del sistema (Solicitudes y Reservas)
+      description: |
+        Consulta a Reservas dentro del timeout. Responde siempre 200: estado "ok" si
+        Reservas responde y "degradado" si no (los datos locales siguen disponibles,
+        pero no se pueden crear ni revertir solicitudes).
       operationId: health
       security: []
       responses:
         '200':
-          description: El servicio está vivo
+          description: Estado del sistema
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  estado:   { type: string, example: ok }
+                  estado:                    { type: string, enum: [ok, degradado], example: ok }
+                  servicio:                  { type: string, example: solicitudes }
+                  reservas:                  { type: string, enum: [disponible, no_disponible], example: disponible }
+                  compensaciones_pendientes: { type: integer, example: 0 }
+                  cache:                     { type: string, example: deshabilitada }
+  /health/live:
+    get:
+      tags: [Operación]
+      summary: Liveness del proceso Solicitudes
+      description: |
+        Indica solo que el proceso responde; no consulta a Reservas. Lo usan el
+        HEALTHCHECK de Docker y la sonda del Experimento 1.
+      operationId: healthLive
+      security: []
+      responses:
+        '200':
+          description: El proceso está vivo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  estado:   { type: string, example: vivo }
                   servicio: { type: string, example: solicitudes }
-                  cache:    { type: string, example: deshabilitada }
   /health/ready:
     get:
       tags: [Operación]
       summary: Disponibilidad del servicio y de su dependencia (Reservas)
       description: |
-        Verifica que Reservas responda dentro del timeout. 
+        Readiness: verifica que Reservas responda dentro del timeout.
+        Cualquier falla de Reservas (caído, lento o con error) se informa como 503.
         Informa también cuántas liberaciones quedan pendientes de reconciliar.
       operationId: healthReady
       security: []
@@ -237,7 +263,7 @@ paths:
                   reservas:                  { type: string, example: disponible }
                   compensaciones_pendientes: { type: integer, example: 0 }
         '503':
-          description: Reservas no respondió a tiempo
+          description: Reservas no está disponible
           headers:
             Retry-After:
               schema: { type: integer }

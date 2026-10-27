@@ -133,7 +133,7 @@ def ejecutar(retardo_ms, timeout_s, repeticion, credenciales, crudos):
 
     def sondear_health():
         while not fin_carga.is_set():
-            codigo, ms, _ = http("GET", "/health", timeout=60)
+            codigo, ms, _ = http("GET", "/health/live", timeout=60)
             latencias_health.append(ms)
             time.sleep(INTERVALO_HEALTH_S)
 
@@ -273,7 +273,7 @@ def graficar(agregado):
     fig, ejes = plt.subplots(2, 2, figsize=(13, 9))
     paneles = [
         (ejes[0][0], "lat_p95_ms", "Latencia p95 POST /v1/solicitudes (ms)"),
-        (ejes[0][1], "health_p95_ms", "Latencia p95 GET /v1/health durante la carga (ms)"),
+        (ejes[0][1], "health_p95_ms", "Latencia p95 GET /v1/health/live durante la carga (ms)"),
         (ejes[1][0], "n_201", f"Solicitudes exitosas (201) de {PETICIONES}"),
         (ejes[1][1], "reservas_huerfanas", "Reservas huérfanas (unidades sin solicitud)"),
     ]

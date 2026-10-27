@@ -28,6 +28,6 @@ WORKDIR /app/src
 EXPOSE 8080
 
 HEALTHCHECK --interval=5s --timeout=3s --retries=10 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/v1/health', timeout=2)"
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/v1/health/live', timeout=2)"
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
