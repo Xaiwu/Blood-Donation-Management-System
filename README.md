@@ -151,6 +151,16 @@ Primero se debe obtener un token mediante `POST /v1/auth/token`. Luego, el token
 
 Para pruebas locales pueden utilizarse las credenciales configuradas previamente en el archivo `.env`.
 
+### Endpoints de salud
+
+| Endpoint | Tipo | Consulta a Reservas | Respuesta |
+|---|---|---|---|
+| `GET /v1/health` | Estado del sistema | Sí (`ListarStock` con el mismo timeout) | Siempre `200`: `estado: ok` si Reservas responde, `estado: degradado` y `reservas: no_disponible` si no. Incluye las compensaciones pendientes. |
+| `GET /v1/health/live` | Liveness | No | `200` con `estado: vivo` mientras el proceso responda. Lo usan el `HEALTHCHECK` de Docker y la sonda del Experimento 1. |
+| `GET /v1/health/ready` | Readiness | Sí | `200` si Reservas responde; `503` + `Retry-After` si está caído, lento o responde con error. |
+
+El healthcheck de Docker usa `/health/live` para no marcar como defectuoso a Solicitudes por una falla de Reservas (que Solicitudes maneja respondiendo 503), y el Experimento 1 lo usa como control porque no depende de Reservas.
+
 ## Ejecución de experimentos — ABET 6
 
 El repositorio incluye dos experimentos reproducibles utilizados para evaluar el comportamiento y rendimiento del sistema.
@@ -209,7 +219,7 @@ Se prueban automáticamente las combinaciones de:
 
 El retardo se introduce mediante la variable `RESERVAS_DELAY_MS`, mientras que el tiempo máximo de espera de la llamada gRPC se configura mediante `RESERVAS_TIMEOUT_S`.
 
-Durante cada escenario también se consulta `/v1/health` para observar si la lentitud del servicio de Reservas afecta al resto de la API.
+Durante cada escenario también se consulta `/v1/health/live` (endpoint que no depende de Reservas; en las mediciones originales correspondía a `/v1/health`) para observar si la lentitud del servicio de Reservas afecta al resto de la API.
 
 Para ejecutar el experimento, desde la raíz del repositorio:
 
@@ -239,7 +249,7 @@ Las principales métricas registradas son:
 - Cantidad de respuestas por indisponibilidad (`503`).
 - Solicitudes procesadas por segundo.
 - Reservas huérfanas.
-- Latencia de `/v1/health` durante la carga.
+- Latencia de `/v1/health/live` durante la carga.
 
 Los resultados se almacenan en:
 
