@@ -8,7 +8,7 @@ from functools import lru_cache
 from uuid import UUID
 
 import grpc
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response, status, Header
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -260,7 +260,8 @@ def listar_solicitudes():
 
 @router.post("/solicitudes", status_code=status.HTTP_201_CREATED, response_model=SolicitudOut,
              tags=["Solicitudes"], dependencies=[Depends(requiere_escritura)])
-def registrar_solicitud(solicitud: SolicitudInput, response: Response):
+def registrar_solicitud(solicitud: SolicitudInput, response: Response,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     id_hospital = str(solicitud.id_hospital)
     #Busca si el hospital está en la base de datos
     if not database.obtener_hospital(id_hospital):
@@ -269,8 +270,40 @@ def registrar_solicitud(solicitud: SolicitudInput, response: Response):
             detail={"error": "HOSPITAL_INEXISTENTE", "mensaje": "El hospital indicado no existe"}
         )
 
+    if idempotency_key is not None:
+        clave = idempotency_key.strip()
+        if not clave:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "VALIDACION", "mensaje": "El encabezado Idempotency-Key no puede estar vacío"}
+            )
+        try:
+            id_nueva_solicitud = str(uuid.UUID(clave))
+        except ValueError:
+            id_nueva_solicitud = str(uuid.uuid5(uuid.NAMESPACE_URL, clave))
+
+        existente = database.obtener_solicitud(id_nueva_solicitud)
+
+        if existente:
+            if (
+                existente["id_hospital"] != id_hospital
+                or existente["tipo_sangre"] != solicitud.tipo_sangre.value
+                or existente["cantidad"] != solicitud.cantidad
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "VALIDACION",
+                        "mensaje": "El Idempotency-Key ya fue utilizado con datos de solicitud distintos"
+                    }
+                )
+            response.status_code = status.HTTP_200_OK
+            response.headers["Location"] = f"/v1/solicitudes/{id_nueva_solicitud}"
+            return existente
+    else:
+        id_nueva_solicitud = str(uuid.uuid4())
+
     tipo_enum = pb.TipoSangre.Value(solicitud.tipo_sangre.value)
-    id_nueva_solicitud = str(uuid.uuid4())
     stub = get_grpc_stub()
 
     try:

@@ -234,3 +234,40 @@ def test_health_ready_error_inesperado_es_503(cliente, stub):
     stub.errores["ListarStock"] = ErrorRpc(grpc.StatusCode.INTERNAL)
     r = cliente.get("/v1/health/ready")
     assert r.status_code == 503 and r.json()["error"] == "RESERVAS_NO_DISPONIBLE"
+
+def test_idempotency_key_no_duplica_solicitud(cliente, escritor, hospital, stub):
+    # Crea datos para generar una solicitud de forma arbitraria
+    headers = {**escritor, "Idempotency-Key": "11111111-2222-3333-4444-555555555555"}
+    payload = {"id_hospital": hospital, "tipo_sangre": "O_POSITIVO", "cantidad": 2}
+
+    # Genera 2 veces la misma solicitud
+    r1 = cliente.post("/v1/solicitudes", json=payload, headers=headers)
+    r2 = cliente.post("/v1/solicitudes", json=payload, headers=headers)
+    # La primera deberia responder que se creo exitosamente
+    assert r1.status_code == 201
+    # La segunda responde que la solicitud ya fue respondida correctamente
+    assert r2.status_code == 200
+    # Esto comprueba que dentro de la base de datos sean la misma solicitud
+    assert r1.json()["id_solicitud"] == r2.json()["id_solicitud"]
+    # Comprueba que se haya generado solo una solicitud
+    assert len(database.listar_solicitudes()) == 1
+    # Revisa cuantas veces se realizo reservar unidades la cual tendria que ser una sola vez
+    assert stub.veces("ReservarUnidades") == 1
+
+
+def test_idempotency_key_conflicto_con_payload_distinto(cliente, escritor, hospital, stub):
+    # Crea un mismo header
+    headers = {**escritor, "Idempotency-Key": "clave-reintento-001"}
+    # Crea 2 solicitudes con parametros distintos, en este caso la cantidad
+    r1 = cliente.post("/v1/solicitudes",
+                      json={"id_hospital": hospital, "tipo_sangre": "O_POSITIVO", "cantidad": 2},
+                      headers=headers)
+    r2 = cliente.post("/v1/solicitudes",
+                      json={"id_hospital": hospital, "tipo_sangre": "O_POSITIVO", "cantidad": 5},
+                      headers=headers)
+    # La primera devuelve exito
+    assert r1.status_code == 201
+    # Debe devolver conflicto ya que no puede haber una misma clave con distintos datos
+    assert r2.status_code == 409
+    # Revisa cuantas veces se realizo reservar unidades la cual tendria que ser una sola vez
+    assert stub.veces("ReservarUnidades") == 1

@@ -124,12 +124,28 @@ paths:
       description: |
         Reserva las unidades de sangre
       operationId: registrarSolicitud
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Clave única para garantizar idempotencia en reintentos.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/SolicitudInput' }
       responses:
+        '200':
+          description: Solicitud previamente registrada con la misma Idempotency-Key (reintento idempotente)
+          headers:
+            Location:
+              description: URL de la solicitud existente
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Solicitud' }
         '201':
           description: Solicitud registrada y unidades reservadas
           headers:
