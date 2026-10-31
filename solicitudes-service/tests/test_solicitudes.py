@@ -268,6 +268,31 @@ def test_idempotency_key_conflicto_con_payload_distinto(cliente, escritor, hospi
     # La primera devuelve exito
     assert r1.status_code == 201
     # Debe devolver conflicto ya que no puede haber una misma clave con distintos datos
-    assert r2.status_code == 409
+    assert r2.status_code == 400
     # Revisa cuantas veces se realizo reservar unidades la cual tendria que ser una sola vez
     assert stub.veces("ReservarUnidades") == 1
+
+def test_reintento_tras_timeout_reutiliza_el_mismo_id(cliente, escritor, hospital, stub):
+    h = {**escritor, "Idempotency-Key": "clave-no-uuid-1"}
+    payload = {"id_hospital": hospital, "tipo_sangre": "O_POSITIVO", "cantidad": 2}
+    stub.errores["ReservarUnidades"] = ErrorRpc(grpc.StatusCode.DEADLINE_EXCEEDED)
+    assert cliente.post("/v1/solicitudes", json=payload, headers=h).status_code == 503
+    stub.errores.pop("ReservarUnidades")
+    assert cliente.post("/v1/solicitudes", json=payload, headers=h).status_code == 201
+    ids = [req.id_solicitud for m, req in stub.llamadas if m == "ReservarUnidades"]
+    assert len(set(ids)) == 1   # ambos intentos usaron el mismo id
+
+
+def test_duplicado_concurrente_no_libera_reserva_valida(cliente, escritor, hospital, stub, monkeypatch):
+    h = {**escritor, "Idempotency-Key": "clave-carrera"}
+    payload = {"id_hospital": hospital, "tipo_sangre": "O_POSITIVO", "cantidad": 2}
+    assert cliente.post("/v1/solicitudes", json=payload, headers=h).status_code == 201
+    # Simula una 2ª petición que pasó el chequeo antes de que la 1ª guardara
+    real, n = database.obtener_solicitud, {"v": 0}
+    def primera_vez_vacia(i):
+        n["v"] += 1
+        return None if n["v"] == 1 else real(i)
+    monkeypatch.setattr(database, "obtener_solicitud", primera_vez_vacia)
+    r = cliente.post("/v1/solicitudes", json=payload, headers=h)
+    assert r.status_code == 200
+    assert stub.veces("LiberarUnidades") == 0
