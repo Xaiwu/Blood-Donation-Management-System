@@ -1,6 +1,6 @@
 using System;
 using Grpc.Net.Client;
-using Reservas;
+using Reservas.V1;
 
 using var canal = GrpcChannel.ForAddress("http://localhost:50051");
 var cliente = new ReservaService.ReservaServiceClient(canal);
