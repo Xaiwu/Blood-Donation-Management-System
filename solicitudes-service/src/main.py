@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from enum import Enum
 from functools import lru_cache
 from uuid import UUID
+import sqlite3
 
 import grpc
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response, status, Header
@@ -291,9 +292,9 @@ def registrar_solicitud(solicitud: SolicitudInput, response: Response,
                 or existente["cantidad"] != solicitud.cantidad
             ):
                 raise HTTPException(
-                    status_code=409,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     detail={
-                        "error": "VALIDACION",
+                        "error": "IDEMPOTENCY_KEY_MISMATCH",
                         "mensaje": "El Idempotency-Key ya fue utilizado con datos de solicitud distintos"
                     }
                 )
@@ -336,6 +337,15 @@ def registrar_solicitud(solicitud: SolicitudInput, response: Response,
             tipo_sangre=solicitud.tipo_sangre.value,
             cantidad=solicitud.cantidad
         )
+    except sqlite3.IntegrityError:
+        # Para el caso de 2 solicitudes con la misma clave y que se envien casi simultaneamente
+        # Se devuelve la primera y no se libera nada
+        existente= database.obtener_solicitud(id_nueva_solicitud)
+        if idempotency_key is not None and existente:
+            response.status_code = status.HTTP_200_OK
+            response.headers["location"]= f"/v1/solicitudes/{id_nueva_solicitud}"
+            return existente
+        raise    
     except Exception:
         # Si las unidades no se guardaron se liberan para cuidar y mantener la consistencia de la base de datos de reservas
         logger.exception("Falló el guardado de la solicitud %s tras reservar", id_nueva_solicitud)
