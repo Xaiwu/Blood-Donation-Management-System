@@ -4,6 +4,7 @@ Módulo del servidor gRPC para reservas-service.
 Implementa la interfaz RPC definida en reservas.proto.
 
 """
+import logging
 import os
 import signal
 import sys
@@ -23,10 +24,26 @@ import reservas_pb2_grpc as pbg
 RETARDO_MS = int(os.getenv("RESERVAS_DELAY_MS", "0"))
 
 
+logger = logging.getLogger("reservas")
+
+
 def _simular_latencia():
     """Duerme RETARDO_MS milisegundos si el retardo experimental está activo."""
     if RETARDO_MS > 0:
         time.sleep(RETARDO_MS / 1000)
+
+
+def _abortar_por_bd(context, error: db.ErrorBaseDatos):
+    """
+    Responde una falla del motor de base de datos sin confundirla con una regla de negocio.
+
+    UNAVAILABLE si es transitoria (el cliente la ve como 503 y puede reintentar), INTERNAL si no.
+    El detalle de SQLite se registra en el log y no se envía al cliente.
+    """
+    logger.error("Error de base de datos (transitorio=%s): %s", error.transitorio, error)
+    if error.transitorio:
+        context.abort(grpc.StatusCode.UNAVAILABLE, "Base de datos de reservas ocupada, reintente")
+    context.abort(grpc.StatusCode.INTERNAL, "Error interno de la base de datos de reservas")
 
 
 class ReservaService(pbg.ReservaServiceServicer):
@@ -51,7 +68,10 @@ class ReservaService(pbg.ReservaServiceServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Debe especificar un tipo de sangre valido")
 
         nombre_tipo = pb.TipoSangre.Name(request.tipo_sangre)
-        stock = db.consultar_stock(nombre_tipo)
+        try:
+            stock = db.consultar_stock(nombre_tipo)
+        except db.ErrorBaseDatos as e:
+            _abortar_por_bd(context, e)
 
         if stock is None:
             context.abort(grpc.StatusCode.NOT_FOUND, f"Tipo de sangre {nombre_tipo} no catalogado")
@@ -68,7 +88,10 @@ class ReservaService(pbg.ReservaServiceServicer):
         Returns:
             pb.ListarStockResponse: La respuesta con la lista de stock de todos los tipos de sangre.
         """
-        filas = db.listar_todo()
+        try:
+            filas = db.listar_todo()
+        except db.ErrorBaseDatos as e:
+            _abortar_por_bd(context, e)
         items = []
         for fila in filas:
             items.append(pb.StockSangre(
@@ -106,7 +129,10 @@ class ReservaService(pbg.ReservaServiceServicer):
             nombre_tipo = pb.TipoSangre.Name(request.tipo_sangre)
         except ValueError:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Valor de enumerado no reconocido")
-        exito, resultado = db.reservar_stock(request.id_solicitud, nombre_tipo, request.cantidad)
+        try:
+            exito, resultado = db.reservar_stock(request.id_solicitud, nombre_tipo, request.cantidad)
+        except db.ErrorBaseDatos as e:
+            _abortar_por_bd(context, e)
 
         if not exito or not isinstance(resultado, int):
             context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(resultado))
@@ -146,7 +172,10 @@ class ReservaService(pbg.ReservaServiceServicer):
         except ValueError:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Valor de enumerado no reconocido")
 
-        exito, resultado = db.liberar_stock(request.id_solicitud, nombre_tipo, request.cantidad)
+        try:
+            exito, resultado = db.liberar_stock(request.id_solicitud, nombre_tipo, request.cantidad)
+        except db.ErrorBaseDatos as e:
+            _abortar_por_bd(context, e)
 
         if not exito or not isinstance(resultado, int):
             context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(resultado))
@@ -163,6 +192,7 @@ def crear_server():
     """
     Inicializa y configura el servidor gRPC para la gestión de reservas de sangre.
     """
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
     db.inicializar_bd()
     servidor = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     pbg.add_ReservaServiceServicer_to_server(ReservaService(), servidor)

@@ -6,6 +6,28 @@ import sqlite3
 
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "reservas.db"))
 
+
+class ErrorBaseDatos(Exception):
+    """
+    Falla del motor de base de datos (no una regla de negocio).
+
+    Se separa de los rechazos de negocio, que se retornan como (False, mensaje), para que
+    una falla de infraestructura no se informe como falta de stock.
+
+    Attributes:
+        transitorio: True si la falla puede resolverse reintentando (base bloqueada u ocupada).
+    """
+    def __init__(self, mensaje: str, transitorio: bool):
+        super().__init__(mensaje)
+        self.transitorio = transitorio
+
+
+def _error_bd(error: sqlite3.Error) -> ErrorBaseDatos:
+    """Convierte un error de sqlite3 en ErrorBaseDatos, marcando si es transitorio."""
+    texto = str(error).lower()
+    transitorio = isinstance(error, sqlite3.OperationalError) and ("locked" in texto or "busy" in texto)
+    return ErrorBaseDatos(str(error), transitorio)
+
 def obtener_conexion() -> sqlite3.Connection:
     """
     Crea y retorna una conexión a la base de datos local SQLite.
@@ -97,6 +119,8 @@ def consultar_stock(tipo_nombre: str) -> int | None:
         )
         fila = cursor.fetchone()
         return fila["unidades_disponibles"] if fila else None
+    except sqlite3.Error as e:
+        raise _error_bd(e) from e
     finally:
         conn.close()
 
@@ -113,6 +137,8 @@ def listar_todo() -> list[sqlite3.Row]:
     try:
         cursor.execute("SELECT tipo_sangre, unidades_disponibles FROM inventario")
         return cursor.fetchall()
+    except sqlite3.Error as e:
+        raise _error_bd(e) from e
     finally:
         conn.close()
 
@@ -128,7 +154,8 @@ def reservar_stock(
     Utiliza 'BEGIN IMMEDIATE' para adquirir un bloqueo de escritura previo al SELECT,
     mitigando condiciones de carrera y evitando sobreasignaciones concurrentes.
     Si la solicitud ya fue procesada con anterioridad, retorna el estado actual sin
-    duplicar el descuento (Idempotent Receiver).
+    duplicar el descuento (Idempotent Receiver). Reusar el id con otros parámetros, o
+    después de que su reserva fue liberada, se rechaza: no es un reintento.
 
     Args:
         id_solicitud: Identificador único de la solicitud.
@@ -138,7 +165,10 @@ def reservar_stock(
     Returns:
         Tuple[bool, int | str]:
             - (True, int): Éxito; retorna el remanente de unidades disponibles.
-            - (False, str): Falla de validación, stock insuficiente o error SQL.
+            - (False, str): Falla de validación o stock insuficiente.
+
+    Raises:
+        ErrorBaseDatos: Si falla el motor de base de datos.
     """
     conn = obtener_conexion()
     cursor = conn.cursor()
@@ -147,11 +177,24 @@ def reservar_stock(
 
         # Comprobación de Idempotencia
         cursor.execute(
-            "SELECT id FROM log_reservas WHERE id_solicitud = ? AND accion = 'RESERVA'",
+            "SELECT tipo_sangre, cantidad FROM log_reservas WHERE id_solicitud = ? AND accion = 'RESERVA'",
             (id_solicitud,)
         )
-        if cursor.fetchone():
-            # Si la solicitud ya existe, se lee el stock remanente y se responde con éxito sin descontar
+        reserva_previa = cursor.fetchone()
+        if reserva_previa:
+            if reserva_previa["tipo_sangre"] != tipo_nombre or reserva_previa["cantidad"] != cantidad:
+                conn.rollback()
+                return False, f"La solicitud {id_solicitud} ya tiene una reserva con otro tipo o cantidad"
+
+            cursor.execute(
+                "SELECT id FROM log_reservas WHERE id_solicitud = ? AND accion = 'LIBERACION'",
+                (id_solicitud,)
+            )
+            if cursor.fetchone():
+                conn.rollback()
+                return False, f"La reserva de la solicitud {id_solicitud} ya fue liberada"
+
+            # Reintento exacto de una reserva vigente: se responde con éxito sin descontar
             cursor.execute(
                 "SELECT unidades_disponibles FROM inventario WHERE tipo_sangre = ?",
                 (tipo_nombre,)
@@ -193,7 +236,7 @@ def reservar_stock(
 
     except sqlite3.Error as e:
         conn.rollback()
-        return False, str(e)
+        raise _error_bd(e) from e
     finally:
         conn.close()
 
@@ -205,12 +248,31 @@ def liberar_stock(
 ) -> tuple[bool, int | str]:
     """
     Libera unidades previamente reservadas retornándolas al inventario disponible.
-    Implementa Idempotent Receiver verificando log_reservas antes de descontar de reservadas.
+    Implementa Idempotent Receiver verificando log_reservas antes de descontar de reservadas:
+    solo libera lo que ese id_solicitud reservó (mismo tipo y cantidad), y si ya fue
+    liberado responde éxito sin tocar el stock.
+
+    Raises:
+        ErrorBaseDatos: Si falla el motor de base de datos.
     """
     conn = obtener_conexion()
     cursor = conn.cursor()
     try:
         cursor.execute("BEGIN IMMEDIATE")
+
+        # Verificar que exista la reserva original para ese id_solicitud y que coincida
+        cursor.execute(
+            "SELECT tipo_sangre, cantidad FROM log_reservas WHERE id_solicitud = ? AND accion = 'RESERVA'",
+            (id_solicitud,)
+        )
+        reserva_previa = cursor.fetchone()
+        if not reserva_previa:
+            conn.rollback()
+            return False, f"No existe una reserva previa asociada a la solicitud {id_solicitud}"
+        if reserva_previa["tipo_sangre"] != tipo_nombre or reserva_previa["cantidad"] != cantidad:
+            conn.rollback()
+            return False, f"La reserva de la solicitud {id_solicitud} fue de otro tipo o cantidad"
+
         # Comprobación de Idempotencia Si ya se libero antes o no.
         cursor.execute(
             "SELECT id FROM log_reservas WHERE id_solicitud = ? AND accion = 'LIBERACION'",
@@ -225,16 +287,6 @@ def liberar_stock(
             fila = cursor.fetchone()
             conn.commit()
             return True, fila["unidades_disponibles"] if fila else 0
-
-        # Verificar que exista la reserva original para ese id_solicitud
-        cursor.execute(
-            "SELECT cantidad FROM log_reservas WHERE id_solicitud = ? AND accion = 'RESERVA'",
-            (id_solicitud,)
-        )
-        reserva_previa = cursor.fetchone()
-        if not reserva_previa:
-            conn.rollback()
-            return False, f"No existe una reserva previa asociada a la solicitud {id_solicitud}"
 
         # Comprobar existencia y stock en reserva
         cursor.execute(
@@ -271,6 +323,6 @@ def liberar_stock(
 
     except sqlite3.Error as e:
         conn.rollback()
-        return False, str(e)
+        raise _error_bd(e) from e
     finally:
         conn.close()
