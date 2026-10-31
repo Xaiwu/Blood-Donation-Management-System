@@ -128,7 +128,11 @@ paths:
         - name: Idempotency-Key
           in: header
           required: false
-          description: Clave única para garantizar idempotencia en reintentos.
+          description: |
+           Clave única para garantizar idempotencia en reintentos. 
+           Se acepta cualquier texto no vació, misma clave y datos devuelve 200 (la solicitud ya fue procesada),
+           misma clave y datos distinto devuelve 400 (IDEMPOTENCY_KEY_MISMATCH)y una clave nueva la procesa con normalidad
+        
           schema:
             type: string
       requestBody:
@@ -155,7 +159,19 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Solicitud' }
-        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+        '400':
+          description: Cuerpo inválido o conflicto con el Idempotency-Key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                validacion:
+                  summary: Error de validación de campos
+                  value: { error: VALIDACION, mensaje: "El campo 'cantidad' debe ser un entero entre 1 y 50" }
+                idempotencia:
+                  summary: Idempotency-Key reutilizado con datos distintos
+                  value: { error: IDEMPOTENCY_KEY_MISMATCH, mensaje: "El Idempotency-Key ya fue utilizado con datos de solicitud distintos" }
+
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '409':
@@ -390,6 +406,7 @@ components:
             - SOLICITUD_YA_REVERTIDA
             - RESERVAS_NO_DISPONIBLE
             - ERROR_INTERNO
+            - IDEMPOTENCY_KEY_MISMATCH
         mensaje: { type: string }
 
   responses:
