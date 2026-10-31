@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: Sistema de donación de sangre (API EXTERNA)
-  version: 1.0.1
+  version: 1.1.0
   description: |
     API REST Del sistema de solicitudes del banco de sangre
 
