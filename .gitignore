@@ -5,3 +5,12 @@ experimentos/_gen/
 __pycache__/
 cliente-dotnet/bin/
 cliente-dotnet/obj/
+
+# Stubs gRPC generados al construir las imágenes
+reservas_pb2.py
+reservas_pb2_grpc.py
+
+# IDE y archivos locales
+.idea/
+*.db
+.pytest_cache/
