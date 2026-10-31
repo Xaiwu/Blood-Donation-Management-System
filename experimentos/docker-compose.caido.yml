@@ -1,0 +1,8 @@
+# Override para medir el caso "Reservas caído" (exp3) como un proyecto aislado.
+# Publica solicitudes en 18180 y no publica el puerto gRPC de reservas.
+services:
+  reservas:
+    ports: !reset []
+  solicitudes:
+    ports: !override
+      - "18180:8080"
