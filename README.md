@@ -63,7 +63,7 @@ Para ejecutar los experimentos ABET 6 también se requiere:
 
 2. **Configuración de variables de entorno**
 
-Antes de iniciar el sistema, se deben configurar las variables de entorno utilizadas para la autenticación de la API REST.
+Este paso es **opcional** para levantar el sistema: si no existe `.env`, `docker-compose.yml` usa las credenciales de demostración (`lector/lector123` y `operador/operador123`) y un `JWT_SECRET` aleatorio. Sí es necesario para ejecutar los experimentos y para usar credenciales propias fuera del desarrollo local.
 
 Desde la raíz del proyecto, copie el archivo `.env-example` y renómbrelo como `.env`:
 
@@ -77,7 +77,7 @@ En Windows PowerShell también puede utilizar:
 Copy-Item .env-example .env
 ```
 
-Luego, complete las variables del archivo `.env`:
+La plantilla ya trae las credenciales de demostración, por lo que funciona sin editarla. Para usar valores propios, modifique las variables del archivo `.env`:
 
 ```env
 JWT_SECRET=
@@ -92,7 +92,7 @@ Las credenciales anteriores pueden utilizarse para fines de demostración:
 - `lector / lector123`: usuario con permisos de solo lectura.
 - `operador / operador123`: usuario con permisos de lectura y escritura.
 
-> **Importante:** `USUARIO_LECTURA`, `CLAVE_LECTURA`, `USUARIO_ESCRITURA` y `CLAVE_ESCRITURA` deben estar configuradas para que el servicio de Solicitudes pueda iniciar correctamente.
+> **Importante:** el servicio de Solicitudes no inicia si `USUARIO_LECTURA`, `CLAVE_LECTURA`, `USUARIO_ESCRITURA` o `CLAVE_ESCRITURA` quedan vacías (fail-fast). Con Docker Compose esto no ocurre porque se aplican los valores de demostración; al ejecutar el servicio fuera de Docker deben definirse a mano.
 
 El archivo `.env` está excluido del control de versiones mediante `.gitignore`, por lo que las credenciales configuradas localmente no se almacenan en el repositorio.
 

@@ -18,10 +18,11 @@ services:
       RESERVAS_TIMEOUT_S: "${RESERVAS_TIMEOUT_S:-2.0}"
       RETRY_AFTER_S: "5"
       JWT_SECRET: "${JWT_SECRET}"
-      USUARIO_LECTURA: "${USUARIO_LECTURA}"
-      CLAVE_LECTURA: "${CLAVE_LECTURA}"
-      USUARIO_ESCRITURA: "${USUARIO_ESCRITURA}"
-      CLAVE_ESCRITURA: "${CLAVE_ESCRITURA}"
+      # Valores de demostración si no existe .env (solo desarrollo local)
+      USUARIO_LECTURA: "${USUARIO_LECTURA:-lector}"
+      CLAVE_LECTURA: "${CLAVE_LECTURA:-lector123}"
+      USUARIO_ESCRITURA: "${USUARIO_ESCRITURA:-operador}"
+      CLAVE_ESCRITURA: "${CLAVE_ESCRITURA:-operador123}"
     volumes:
       - solicitudes-data:/data
     ports:
